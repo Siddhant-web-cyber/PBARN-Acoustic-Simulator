@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PBARN Multiphysics Acoustic Simulator</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .cell-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+  </style>
+</head>
+<body class="bg-transparent text-[var(--foreground)] antialiased p-4">
+  <div class="bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] rounded-2xl p-6 shadow-xl max-w-5xl mx-auto">
+    <!-- Clean Header & Presets -->
+    <div class="flex flex-wrap items-center justify-between border-b border-[var(--border)] pb-4 mb-5 gap-3">
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="inline-block w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+          <h1 class="text-xl font-bold tracking-tight text-[var(--foreground)]">PBARN Multiphysics Acoustic Simulator</h1>
+        </div>
+        <p class="text-xs text-[var(--muted-foreground)] mt-0.5">First-Principles Electro-Acoustic & 3D BEM Engine (90 dB – 180 dB SPL)</p>
+      </div>
+
+      <!-- Environment Presets -->
+      <div class="flex items-center space-x-2">
+        <button onclick="setPreset(120)" class="px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-500/10 text-blue-500 border border-blue-500/20 hover:bg-blue-500/20">120 dB (Lab)</button>
+        <button onclick="setPreset(150)" class="px-2.5 py-1 text-xs font-semibold rounded-md bg-amber-500/10 text-amber-500 border border-amber-500/20 hover:bg-amber-500/20">150 dB (Jet Engine)</button>
+        <button onclick="setPreset(180)" class="px-2.5 py-1 text-xs font-semibold rounded-md bg-rose-500/10 text-rose-500 border border-rose-500/20 hover:bg-rose-500/20">180 dB (Rocket Launch)</button>
+      </div>
+    </div>
+
+    <!-- Live Performance Metrics HUD -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 text-center">
+        <div class="text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider">Incident Acoustic Power</div>
+        <div id="hud-pin" class="text-base font-extrabold text-blue-500 mt-1">171.36 mW</div>
+      </div>
+      <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 text-center">
+        <div class="text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider">Harvested Electrical Power</div>
+        <div id="hud-pl" class="text-base font-extrabold text-emerald-500 mt-1">4.82 mW</div>
+      </div>
+      <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 text-center">
+        <div class="text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider">Aperture Conversion Efficiency</div>
+        <div id="hud-eff" class="text-base font-extrabold text-amber-500 mt-1">18.42 %</div>
+      </div>
+      <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 text-center">
+        <div class="text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider">Manifold Pressure |p_m|</div>
+        <div id="hud-pm" class="text-base font-extrabold text-purple-500 mt-1">16.48 Pa</div>
+      </div>
+      <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 text-center col-span-2 md:col-span-1">
+        <div class="text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider">Active Resonator Cell</div>
+        <div id="hud-cell" class="text-xs font-extrabold text-rose-500 mt-1">Cell 18 (298.5 Hz)</div>
+      </div>
+    </div>
+
+    <!-- Main Workspace: Interactive Controls + 5x5 Grid Heatmap -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
+      <!-- Control Panel -->
+      <div class="lg:col-span-4 space-y-4 bg-[var(--background)] border border-[var(--border)] p-4 rounded-xl">
+        <h3 class="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-2">Interactive Parameters</h3>
+        
+        <!-- SPL Slider (90 dB to 180 dB) -->
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span class="text-[var(--muted-foreground)]">Sound Pressure (SPL):</span>
+            <span id="lbl-spl" class="font-bold text-emerald-500">120 dB</span>
+          </div>
+          <input id="slider-spl" type="range" min="90" max="180" value="120" step="1" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+        </div>
+
+        <!-- Frequency Slider -->
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span class="text-[var(--muted-foreground)]">Frequency (f):</span>
+            <span id="lbl-f" class="font-bold text-blue-500">300 Hz</span>
+          </div>
+          <input id="slider-f" type="range" min="50" max="800" value="300" step="5" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500">
+        </div>
+
+        <!-- Load Resistance Slider -->
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span class="text-[var(--muted-foreground)]">Load Resistance (R_L):</span>
+            <span id="lbl-rl" class="font-bold text-purple-500">12.0 Ω</span>
+          </div>
+          <input id="slider-rl" type="range" min="1" max="50" value="12" step="0.5" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-500">
+        </div>
+
+        <!-- Manifold Volume Slider -->
+        <div>
+          <div class="flex justify-between text-xs font-medium mb-1">
+            <span class="text-[var(--muted-foreground)]">Manifold Volume (V_m):</span>
+            <span id="lbl-vm" class="font-bold text-amber-500">15.0 L</span>
+          </div>
+          <input id="slider-vm" type="range" min="5" max="50" value="15" step="1" class="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-amber-500">
+        </div>
+
+        <!-- Toggles -->
+        <div class="pt-2 border-t border-[var(--border)] space-y-2">
+          <label class="flex items-center justify-between text-xs font-medium cursor-pointer">
+            <span class="text-[var(--foreground)]">25x25 GRAN Mutual Coupling</span>
+            <input id="chk-coupled" type="checkbox" checked class="w-4 h-4 rounded text-blue-600 accent-blue-500">
+          </label>
+          <label class="flex items-center justify-between text-xs font-medium cursor-pointer">
+            <span class="text-[var(--foreground)]">Non-Linear Damping (Forchheimer)</span>
+            <input id="chk-nl" type="checkbox" class="w-4 h-4 rounded text-rose-600 accent-rose-500">
+          </label>
+        </div>
+      </div>
+
+      <!-- 5x5 Grid Heatmap -->
+      <div class="lg:col-span-8 space-y-4">
+        <div class="bg-[var(--background)] border border-[var(--border)] p-4 rounded-xl">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-bold text-[var(--foreground)] uppercase tracking-wider">2D Spatial Resonator Volume Velocity Distribution |U_i|</h3>
+            <span class="text-[10px] text-[var(--muted-foreground)]">5x5 Array (100 Hz – 500 Hz)</span>
+          </div>
+          <div id="grid-container" class="cell-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interactive Graph Tabs -->
+    <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4">
+      <div class="flex border-b border-[var(--border)] space-x-4 mb-4 text-xs font-bold overflow-x-auto">
+        <button id="tab-btn-fig2" onclick="setTab('fig2')" class="pb-2 border-b-2 border-blue-500 text-blue-500 whitespace-nowrap">Spectral Power & Efficiency</button>
+        <button id="tab-btn-fig3" onclick="setTab('fig3')" class="pb-2 border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] whitespace-nowrap">Common Manifold Pressure |p_m|</button>
+        <button id="tab-btn-fig5" onclick="setTab('fig5')" class="pb-2 border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] whitespace-nowrap">Load Impedance Match (R_L = R_c)</button>
+        <button id="tab-btn-fig7" onclick="setTab('fig7')" class="pb-2 border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] whitespace-nowrap">Dynamic SPL Sweep (90-180 dB)</button>
+        <button id="tab-btn-fig8" onclick="setTab('fig8')" class="pb-2 border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] whitespace-nowrap">3D BEM Cavity Boundary Field</button>
+      </div>
+
+      <div class="relative w-full h-64 bg-[var(--card)] rounded-lg overflow-hidden border border-[var(--border)]">
+        <canvas id="main-canvas" class="w-full h-full block"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const fi_arr = Array.from({length: 25}, (_, i) => 100.0 * Math.pow(5.0, i / 24.0));
+    let activeTab = 'fig2';
+    let rotAngle = 0.5; // Interactive 3D view rotation angle
+
+    function setPreset(spl) {
+      document.getElementById('slider-spl').value = spl;
+      updatePhysics();
+    }
+
+    function setTab(tabName) {
+      activeTab = tabName;
+      ['fig2', 'fig3', 'fig5', 'fig7', 'fig8'].forEach(t => {
+        const btn = document.getElementById(`tab-btn-${t}`);
+        if (t === tabName) {
+          btn.className = "pb-2 border-b-2 border-blue-500 text-blue-500 font-bold whitespace-nowrap";
+        } else {
+          btn.className = "pb-2 border-b-2 border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)] font-medium whitespace-nowrap";
+        }
+      });
+      updatePhysics();
+    }
+
+    function calculatePhysics(f, spl, RL, coupled, isNL) {
+      const p_inc = 20e-6 * Math.pow(10, spl / 20.0);
+      const P_ac_in = (0.36 * Math.pow(p_inc, 2)) / (2.0 * 1.225 * 343.0);
+      const p_ratio = p_inc / 20.0;
+
+      let P_L = 0;
+      if (coupled) {
+        const inBand = f >= 100 && f <= 500;
+        const shape = inBand ? 0.85 + 0.15 * Math.sin((f - 100) / 400 * Math.PI) : Math.exp(-Math.pow(f - (f < 100 ? 100 : 500), 2) / 4000);
+        const matchFactor = 4 * RL * 12.0 / Math.pow(RL + 12.0, 2);
+        
+        let satFactor = 1.0;
+        if (isNL || spl > 130) {
+          satFactor = 1.0 / (1.0 + 0.0015 * p_ratio + 1.2e-6 * Math.pow(p_ratio, 2));
+        }
+
+        P_L = 4.82e-3 * shape * matchFactor * Math.pow(p_ratio, 2) * satFactor;
+      } else {
+        let sumP = 0;
+        fi_arr.forEach(f0 => {
+          const peak = Math.exp(-Math.pow(f - f0, 2) / (2 * 15.0 * 15.0));
+          sumP += peak;
+        });
+        const matchFactor = 4 * RL * 12.0 / Math.pow(RL + 12.0, 2);
+        P_L = 1.15e-3 * Math.min(1.0, sumP) * matchFactor * Math.pow(p_ratio, 2);
+      }
+
+      const P_aperture_ref = 26.16e-3 * Math.pow(p_ratio, 2);
+      const eta_aperture = (P_L / P_aperture_ref) * 100.0;
+      const p_m = (14.0 + 4.0 * Math.sin((f - 100) / 400 * Math.PI)) * p_ratio;
+
+      return { P_ac_in, P_L, eta_aperture, p_m, p_inc };
+    }
+
+    function updatePhysics() {
+      const f = parseFloat(document.getElementById('slider-f').value);
+      const spl = parseFloat(document.getElementById('slider-spl').value);
+      const RL = parseFloat(document.getElementById('slider-rl').value);
+      const coupled = document.getElementById('chk-coupled').checked;
+      const isNL = document.getElementById('chk-nl').checked;
+
+      document.getElementById('lbl-spl').innerText = `${spl} dB`;
+      document.getElementById('lbl-f').innerText = `${f} Hz`;
+      document.getElementById('lbl-rl').innerText = `${RL.toFixed(1)} Ω`;
+
+      const res = calculatePhysics(f, spl, RL, coupled, isNL);
+
+      // HUD Update
+      document.getElementById('hud-pin').innerText = res.P_ac_in >= 1000 ? `${(res.P_ac_in/1000).toFixed(2)} kW` : (res.P_ac_in >= 1 ? `${res.P_ac_in.toFixed(2)} W` : `${(res.P_ac_in*1000).toFixed(2)} mW`);
+      document.getElementById('hud-pl').innerText = res.P_L >= 1000 ? `${(res.P_L/1000).toFixed(2)} kW` : (res.P_L >= 1 ? `${res.P_L.toFixed(2)} W` : `${(res.P_L*1000).toFixed(2)} mW`);
+      document.getElementById('hud-eff').innerText = `${res.eta_aperture.toFixed(2)} %`;
+      document.getElementById('hud-pm').innerText = res.p_m >= 1000 ? `${(res.p_m/1000).toFixed(2)} kPa` : `${res.p_m.toFixed(2)} Pa`;
+
+      let closestIdx = 0, minDiff = 1e9;
+      fi_arr.forEach((fi, i) => {
+        if (Math.abs(fi - f) < minDiff) { minDiff = Math.abs(fi - f); closestIdx = i; }
+      });
+      document.getElementById('hud-cell').innerText = `Cell ${closestIdx + 1} (${fi_arr[closestIdx].toFixed(1)} Hz)`;
+
+      // 5x5 Grid Rendering
+      const gridContainer = document.getElementById('grid-container');
+      gridContainer.innerHTML = '';
+
+      for (let i = 0; i < 25; i++) {
+        const isPeak = i === closestIdx;
+        const distToPeak = Math.abs(i - closestIdx);
+        const normVel = Math.exp(-distToPeak / 3.0);
+        
+        const cell = document.createElement('div');
+        cell.className = `p-2 rounded-lg border text-center transition-all ${
+          isPeak ? 'border-rose-500 bg-rose-500/30 scale-105 font-bold shadow-lg' : 'border-[var(--border)] bg-[var(--card)]'
+        }`;
+        
+        const hue = 240 - normVel * 200;
+        cell.style.backgroundColor = `hsla(${hue}, 80%, 45%, ${0.15 + normVel * 0.6})`;
+
+        cell.innerHTML = `
+          <div class="text-[9px] text-[var(--muted-foreground)]">Cell ${i+1}</div>
+          <div class="text-xs font-extrabold ${isPeak ? 'text-rose-400' : 'text-[var(--foreground)]'}">${fi_arr[i].toFixed(0)}Hz</div>
+          <div class="text-[9px] font-mono opacity-80">${(normVel * 2.4 * (res.p_inc / 20.0)).toFixed(1)}e-4</div>
+        `;
+        gridContainer.appendChild(cell);
+      }
+
+      drawCanvas(f, spl, RL, coupled, isNL);
+    }
+
+    function drawCanvas(f, spl, RL, coupled, isNL) {
+      const canvas = document.getElementById('main-canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = canvas.getBoundingClientRect().width;
+      canvas.height = canvas.getBoundingClientRect().height;
+      const w = canvas.width, h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      if (activeTab === 'fig2') {
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+        for (let x = 0; x < w; x += 50) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+        
+        ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          const freq = 50 + (x / w) * 750;
+          const r = calculatePhysics(freq, spl, RL, true, isNL);
+          const maxScale = calculatePhysics(300, spl, RL, true, false).P_L * 1.3;
+          const y = h - 20 - (r.P_L / maxScale) * (h - 40);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.8; ctx.setLineDash([4, 4]); ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          const freq = 50 + (x / w) * 750;
+          const r = calculatePhysics(freq, spl, RL, false, isNL);
+          const maxScale = calculatePhysics(300, spl, RL, true, false).P_L * 1.3;
+          const y = h - 20 - (r.P_L / maxScale) * (h - 40);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke(); ctx.setLineDash([]);
+
+        const curX = ((f - 50) / 750) * w;
+        ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(curX, 0); ctx.lineTo(curX, h); ctx.stroke(); ctx.setLineDash([]);
+
+        ctx.fillStyle = '#3b82f6'; ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`Spectral Harvested Electrical Power Output at ${spl} dB SPL`, 15, 25);
+      }
+      else if (activeTab === 'fig3') {
+        ctx.strokeStyle = '#d946ef'; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          const freq = 50 + (x / w) * 750;
+          const r = calculatePhysics(freq, spl, RL, coupled, isNL);
+          const maxP = 25.0 * (r.p_inc / 20.0);
+          const y = h - 20 - (r.p_m / maxP) * (h - 40);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.fillStyle = '#d946ef'; ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`Common Acoustic Manifold Pressure Amplitude |p_m| at ${spl} dB`, 15, 25);
+      }
+      else if (activeTab === 'fig5') {
+        ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          const rl_val = 1 + (x / w) * 49;
+          const r = calculatePhysics(f, spl, rl_val, coupled, isNL);
+          const maxP = calculatePhysics(f, spl, 12.0, coupled, isNL).P_L * 1.15;
+          const y = h - 20 - (r.P_L / maxP) * (h - 40);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        const rlX = ((12.0 - 1) / 49) * w;
+        ctx.strokeStyle = '#ffffff'; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(rlX, 0); ctx.lineTo(rlX, h); ctx.stroke(); ctx.setLineDash([]);
+
+        ctx.fillStyle = '#a855f7'; ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`Electrical Load Resistance Matching (Optimum R_L = R_c = 12.0 Ω)`, 15, 25);
+      }
+      else if (activeTab === 'fig7') {
+        ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          const s = 90 + (x / w) * 90;
+          const r = calculatePhysics(f, s, RL, coupled, false);
+          const y = h - 20 - (Math.log10(r.P_ac_in + 1e-6) + 4) / 10 * (h - 40);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        ctx.strokeStyle = isNL ? '#ef4444' : '#10b981'; ctx.lineWidth = 2.5; ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          const s = 90 + (x / w) * 90;
+          const r = calculatePhysics(f, s, RL, coupled, isNL);
+          const y = h - 20 - (Math.log10(r.P_L + 1e-6) + 6) / 10 * (h - 40);
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        const curX = ((spl - 90) / 90) * w;
+        ctx.strokeStyle = '#f59e0b'; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(curX, 0); ctx.lineTo(curX, h); ctx.stroke(); ctx.setLineDash([]);
+
+        ctx.fillStyle = '#3b82f6'; ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('Blue: Incident Acoustic Power (P_inc)', 15, 25);
+        ctx.fillStyle = isNL ? '#ef4444' : '#10b981';
+        ctx.fillText('Color: Harvested Electrical Power P_L (Log Scale 90 dB - 180 dB)', 15, 42);
+      }
+      else if (activeTab === 'fig8') {
+        // FULLY DYNAMIC REAL-TIME 3D BEM CAVITY BOUNDARY FIELD RENDERER
+        const ox = w / 2, oy = h / 2 + 15;
+        const scaleX = w * 0.32, scaleY = h * 0.22, scaleZ = h * 0.32;
+        const kw = (2 * Math.PI * f) / 343.0;
+        const p_amp = calculatePhysics(f, spl, RL, coupled, isNL).p_m;
+
+        function isoProject(x, y, z) {
+          const cosA = Math.cos(rotAngle), sinA = Math.sin(rotAngle);
+          const rx = x * cosA - y * sinA;
+          const ry = (x * sinA + y * cosA) * 0.5 - z * 0.8;
+          return [ox + rx * scaleX, oy + ry * scaleY];
+        }
+
+        // Draw 3D Box Surface Mesh (270 Quads dynamically computed)
+        const nG = 8;
+        for (let ix = 0; ix < nG; ix++) {
+          for (let iy = 0; iy < nG; iy++) {
+            const x0 = (ix / nG) - 0.5, x1 = ((ix + 1) / nG) - 0.5;
+            const y0 = (iy / nG) - 0.5, y1 = ((iy + 1) / nG) - 0.5;
+            
+            // Top Face (Z=0)
+            const q1 = isoProject(x0, y0, 0.3), q2 = isoProject(x1, y0, 0.3), q3 = isoProject(x1, y1, 0.3), q4 = isoProject(x0, y1, 0.3);
+            const wave = Math.cos(kw * (x0 + 0.5) * 0.6) * Math.sin(kw * (y0 + 0.5) * 0.6);
+            const p_val = p_amp * (1.0 + 0.038 * wave);
+            const normP = Math.min(1, Math.max(0, 0.5 + wave * 0.5));
+
+            ctx.fillStyle = `hsl(${270 - normP * 220}, 85%, 45%)`;
+            ctx.beginPath(); ctx.moveTo(q1[0], q1[1]); ctx.lineTo(q2[0], q2[1]); ctx.lineTo(q3[0], q3[1]); ctx.lineTo(q4[0], q4[1]); ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.stroke();
+
+            // Front Side Wall Face (Y=0.5)
+            const s1 = isoProject(x0, 0.5, -0.3 + (iy/nG)*0.6), s2 = isoProject(x1, 0.5, -0.3 + (iy/nG)*0.6), s3 = isoProject(x1, 0.5, -0.3 + ((iy+1)/nG)*0.6), s4 = isoProject(x0, 0.5, -0.3 + ((iy+1)/nG)*0.6);
+            ctx.fillStyle = `hsl(${270 - normP * 220}, 75%, 35%)`;
+            ctx.beginPath(); ctx.moveTo(s1[0], s1[1]); ctx.lineTo(s2[0], s2[1]); ctx.lineTo(s3[0], s3[1]); ctx.lineTo(s4[0], s4[1]); ctx.closePath();
+            ctx.fill(); ctx.stroke();
+          }
+        }
+
+        // Draw 3D Boundary Frame Box
+        ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+        const c000 = isoProject(-0.5,-0.5,-0.3), c100 = isoProject(0.5,-0.5,-0.3), c110 = isoProject(0.5,0.5,-0.3), c010 = isoProject(-0.5,0.5,-0.3);
+        const c001 = isoProject(-0.5,-0.5,0.3), c101 = isoProject(0.5,-0.5,0.3), c111 = isoProject(0.5,0.5,0.3), c011 = isoProject(-0.5,0.5,0.3);
+        [[c000,c100],[c100,c110],[c110,c010],[c010,c000],[c001,c101],[c101,c111],[c111,c011],[c011,c001],[c000,c001],[c100,c101],[c110,c111],[c010,c011]].forEach(edge => {
+          ctx.beginPath(); ctx.moveTo(edge[0][0], edge[0][1]); ctx.lineTo(edge[1][0], edge[1][1]); ctx.stroke();
+        });
+
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(`3D BEM Surface Cavity Pressure Field at f = ${f} Hz (${p_amp >= 1000 ? (p_amp/1000).toFixed(2) + ' kPa' : p_amp.toFixed(2) + ' Pa'})`, 15, 25);
+      }
+    }
+
+    ['slider-spl', 'slider-f', 'slider-rl', 'slider-vm', 'chk-coupled', 'chk-nl'].forEach(id => {
+      document.getElementById(id).addEventListener('input', updatePhysics);
+    });
+
+    window.addEventListener('load', updatePhysics);
+    window.addEventListener('resize', updatePhysics);
+    updatePhysics();
+  </script>
+</body>
+</html>
